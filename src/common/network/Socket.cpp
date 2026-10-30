@@ -48,21 +48,24 @@ bool Socket::sendAll(const std::vector<std::uint8_t>& data) {
     return true;
 }
 
-std::optional<std::vector<std::uint8_t>> Socket::receive(std::size_t maxBytes) {
-    std::vector<std::uint8_t> buffer(maxBytes);
+ReceiveResult Socket::receive(std::vector<std::uint8_t>& out, std::size_t maxBytes) {
+    out.resize(maxBytes);
     while (true) {
-        ssize_t received = recv(fd_, buffer.data(), buffer.size(), 0);
+        ssize_t received = recv(fd_, out.data(), out.size(), 0);
         if (received < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            return std::nullopt;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return ReceiveResult::Timeout;
+            }
+            return ReceiveResult::Closed;
         }
         if (received == 0) {
-            return std::nullopt;
+            return ReceiveResult::Closed;
         }
-        buffer.resize(static_cast<std::size_t>(received));
-        return buffer;
+        out.resize(static_cast<std::size_t>(received));
+        return ReceiveResult::Data;
     }
 }
 

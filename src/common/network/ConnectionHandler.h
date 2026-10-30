@@ -5,10 +5,11 @@
 #include "common/infra/Logger.h"
 #include "common/core/Measurement.h"
 #include "common/network/Socket.h"
+#include <atomic>
 
 class ConnectionHandler {
 public:
-    ConnectionHandler(Socket socket, BoundedQueue<Measurement>& queue, Logger& logger);
+    ConnectionHandler(Socket socket, BoundedQueue<Measurement>& queue, Logger& logger, const std::atomic<bool>& shutdown);
 
     void run();
 
@@ -17,4 +18,5 @@ private:
     FrameReader frameReader_;
     BoundedQueue<Measurement>& queue_;
     Logger& logger_;
+    const std::atomic<bool>& shutdown_;
 };

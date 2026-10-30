@@ -5,6 +5,7 @@
 #include <chrono>
 
 void ignoreSigPipe();
+enum class ReceiveResult { Data, Timeout, Closed };
 
 
 class Socket {
@@ -20,7 +21,7 @@ public:
 
     int fd() const;
     bool sendAll(const std::vector<std::uint8_t>& data);
-    std::optional<std::vector<std::uint8_t>> receive(std::size_t maxBytes = 4096);
+    ReceiveResult receive(std::vector<std::uint8_t>& out, std::size_t maxBytes = 4096);
     void enableAddressReuse();
     void setReceiveTimeout(std::chrono::milliseconds timeout);
 

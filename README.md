@@ -161,7 +161,8 @@ In a second terminal, start a simulated device. It connects to `127.0.0.1:5000`,
 
 Several `device_sim` processes with different `--device-id` values can talk to the same server. Each
 process simulates one device. The server logs problems it detects, and logs a device that stops
-sending as timed out. Stop the server with Ctrl+C.
+sending as timed out. Stop the server with Ctrl+C (or `kill`, which sends SIGTERM). It stops accepting
+connections, waits for its threads and exits with code 0 (see Limitations for the details).
 
 **Scenarios.** Run scripted scenarios, with no network. The exit code is 0 if every expectation
 holds, 1 if one fails and 2 for bad input.
@@ -431,8 +432,14 @@ general-purpose OS under WSL2 and gives no timing guarantees. It needs Linux (PO
 
 - The address and port (`127.0.0.1:5000`), the worker count (4), the queue capacity (1024), the
   timeout settings and the detector thresholds are constants in the code. There is no configuration file.
-- No graceful shutdown: the server's threads are detached and its loops never end, so it is stopped
-  with Ctrl+C.
+- Shutdown is graceful but simple. Ctrl+C or SIGTERM only sets a flag. The accept loop, the timeout
+  thread and every connection thread check it (the blocking calls have a 200 ms receive timeout so that
+  they can). The server then joins those threads and stops the worker pool, which finishes the
+  measurements already in the queue. In two manual runs with one silent client connected it exited with
+  code 0 after 0.04 s and 0.50 s; the longest wait is the 500 ms sleep of the timeout thread.
+- During shutdown a client that connects at the last moment is not served and is disconnected, and a
+  message that is only partly received is discarded. The server keeps every connection thread in a list
+  until shutdown, so the list grows with each connection, even after the connection has closed.
 - One thread per connection, with no limit on the number of connections.
 - Timeout detection only knows devices that have sent at least one measurement.
 - A `device_sim` process simulates one device, and a fault can be injected only into its temperature
@@ -449,7 +456,9 @@ general-purpose OS under WSL2 and gives no timing guarantees. It needs Linux (PO
 - `monitor_app` keeps its own copy of the status-to-log-level mapping and uses only the threshold
   detector, so it does not detect a stuck or drifting sensor.
 - `BoundedQueue::push` does not check whether the queue is closed. It is safe today because of the
-  order in which components are stopped.
+  order in which components are stopped: the server joins the connection threads before it stops the
+  worker pool. A connection thread blocked in `push` on a full queue would wait forever if the workers
+  stopped first.
 
 **Measurements**
 
@@ -472,6 +481,7 @@ These follow from the limitations above. None of them is implemented.
    `--device-id`.
 4. **Find out why the feeder stalls at high rates** (the large `max lag`), so that the latency at those
    rates can be trusted.
-5. **Configuration and shutdown:** read the port, worker count and thresholds from a configuration
-   file, and stop the server cleanly.
+5. **Configuration:** read the port, worker count and thresholds from a configuration file. Also remove
+   finished connection threads from the list while the server runs, and add an automated test that
+   starts the server as a process and stops it with a signal.
 6. **Stricter parsing** of numeric fields, and support for several faults at once.

@@ -147,3 +147,41 @@ TEST(Socket, ReceiveTimesOutInsteadOfBlockingForever) {
 
     close(fds[1]);
 }
+
+TEST(Socket, ReceiveReturnsDataWhenBytesArrive) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    Socket receiver(fds[0]);
+    ASSERT_EQ(send(fds[1], "HI", 2, 0), 2);
+
+    std::vector<std::uint8_t> data;
+    EXPECT_EQ(receiver.receive(data), ReceiveResult::Data);
+    EXPECT_EQ(data, (std::vector<std::uint8_t>{'H', 'I'}));
+
+    close(fds[1]);
+}
+
+TEST(Socket, ReceiveReportsTimeoutWhenNoDataArrives) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    Socket receiver(fds[0]);
+    receiver.setReceiveTimeout(std::chrono::milliseconds(50));
+
+    std::vector<std::uint8_t> data;
+    EXPECT_EQ(receiver.receive(data), ReceiveResult::Timeout);
+
+    close(fds[1]);
+}
+
+TEST(Socket, ReceiveReportsClosedWhenPeerCloses) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    Socket receiver(fds[0]);
+    close(fds[1]);
+
+    std::vector<std::uint8_t> data;
+    EXPECT_EQ(receiver.receive(data), ReceiveResult::Closed);
+}

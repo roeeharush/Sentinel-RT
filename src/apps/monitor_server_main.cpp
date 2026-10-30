@@ -20,19 +20,29 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <atomic>
+#include <csignal>
+#include <cerrno>
 
 namespace {
 
+    std::atomic<bool> g_shutdownRequested{false};
+    void handleShutdownSignal(int) {
+        g_shutdownRequested = true;
+    }
     constexpr std::size_t kQueueCapacity = 1024;
     constexpr std::size_t kWorkerCount = 4;
     constexpr int kListenBacklog = 10;
     constexpr std::chrono::milliseconds kTimeoutThreshold(2000);
     constexpr std::chrono::milliseconds kTimeoutCheckInterval(500);
+    constexpr std::chrono::milliseconds kAcceptTimeout(200);
 
 }
 
 int main() {
     ignoreSigPipe();
+    std::signal(SIGINT, handleShutdownSignal);
+    std::signal(SIGTERM, handleShutdownSignal);
 
     int listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd < 0) {
@@ -41,6 +51,7 @@ int main() {
     }
 
     Socket listenSocket(listenFd);
+    listenSocket.setReceiveTimeout(kAcceptTimeout);
 
     sockaddr_in serverAddress{};
     serverAddress.sin_family = AF_INET;
@@ -72,21 +83,24 @@ int main() {
         processor.process(measurement, std::chrono::steady_clock::now());
     }, kWorkerCount);
 
-    std::thread([&timeoutMonitor, &logger]() {
-        while (true) {
-            std::this_thread::sleep_for(kTimeoutCheckInterval);
-            std::vector<std::uint32_t> timedOutDevices = timeoutMonitor.checkTimeouts(std::chrono::steady_clock::now());
-            for (std::uint32_t deviceId : timedOutDevices) {
-                logger.log(LogLevel::Error, "Device " + std::to_string(deviceId) + " timed out");
-            }
+    std::thread timeoutThread([&timeoutMonitor, &logger]() {
+    while (!g_shutdownRequested) {
+        std::this_thread::sleep_for(kTimeoutCheckInterval);
+        std::vector<std::uint32_t> timedOutDevices = timeoutMonitor.checkTimeouts(std::chrono::steady_clock::now());
+        for (std::uint32_t deviceId : timedOutDevices) {
+            logger.log(LogLevel::Error, "Device " + std::to_string(deviceId) + " timed out");
         }
-    }).detach();
-
+    }
+});
+    std::vector<std::thread> connectionThreads;
     std::cout << "Waiting for clients to connect...\n";
 
-    while (true) {
+    while (!g_shutdownRequested) {
         int clientFd = ::accept(listenSocket.fd(), nullptr, nullptr);
         if (clientFd < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                continue;
+            }
             logger.log(LogLevel::Error, "Failed to accept connection");
             continue;
         }
@@ -94,9 +108,15 @@ int main() {
         Socket clientSocket(clientFd);
         logger.log(LogLevel::Info, "Client connected");
 
-        std::thread([socket = std::move(clientSocket), &queue, &logger]() mutable {
-            ConnectionHandler handler(std::move(socket), queue, logger);
-            handler.run();
-        }).detach();
+        connectionThreads.emplace_back([socket = std::move(clientSocket), &queue, &logger]() mutable {
+    ConnectionHandler handler(std::move(socket), queue, logger, g_shutdownRequested);
+    handler.run();
+    });
     }
+    for (std::thread& thread : connectionThreads) {
+        thread.join();
+    }
+    timeoutThread.join();
+    pool.stop();
+    std::cout << "Server stopped cleanly\n";
 }
