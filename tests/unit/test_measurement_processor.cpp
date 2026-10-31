@@ -82,13 +82,14 @@ TEST(MeasurementProcessor, InvalidMeasurementReturnsInvalidAndIsCounted) {
     EXPECT_EQ(rig.stats.totalCount(), 1u);
 }
 
-TEST(MeasurementProcessor, RecordsLatencyAsNowMinusTimestamp) {
+TEST(MeasurementProcessor, LatencyIncludesTheWaitBetweenTimestampAndNow) {
     Rig rig;
     Clock::time_point now = baseTime() + std::chrono::milliseconds(50);
 
     rig.processor.process(makeMeasurement(1, 55.0, baseTime()), now);
 
-    EXPECT_EQ(rig.stats.maxLatency(), std::chrono::milliseconds(50));
+    EXPECT_GE(rig.stats.maxLatency(), std::chrono::milliseconds(50));
+    EXPECT_LT(rig.stats.maxLatency(), std::chrono::milliseconds(60));
 }
 
 TEST(MeasurementProcessor, CountsADeadlineMissOnlyWhenLatencyExceedsTheDeadline) {
@@ -177,4 +178,26 @@ TEST(MeasurementProcessor, ManyThreadsProcessingTogetherCountEveryMeasurement) {
     }
 
     EXPECT_EQ(rig.stats.totalCount(), static_cast<std::uint64_t>(kThreads) * kPerThread);
+}
+
+TEST(MeasurementProcessor, ProcessingTimeCountsTowardsTheLatencyAndTheDeadline) {
+    struct SlowBuffer : std::stringbuf {
+        std::streamsize xsputn(const char* text, std::streamsize count) override {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            return std::stringbuf::xsputn(text, count);
+        }
+    };
+
+    SlowBuffer slowBuffer;
+    std::ostream slowOutput(&slowBuffer);
+    Logger logger{slowOutput};
+    MeasurementJudge judge{defaultThresholds(), kDefaultWindowCapacity};
+    StatsCollector stats{std::chrono::milliseconds(20)};
+    TimeoutMonitor timeoutMonitor{std::chrono::milliseconds(2000)};
+    MeasurementProcessor processor{judge, stats, timeoutMonitor, logger};
+
+    processor.process(makeMeasurement(1, 55.0, baseTime()), baseTime());
+
+    EXPECT_GT(stats.maxLatency(), std::chrono::milliseconds(20));
+    EXPECT_EQ(stats.deadlineMissCount(), 1u);
 }

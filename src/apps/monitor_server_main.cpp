@@ -36,7 +36,8 @@ namespace {
     constexpr std::chrono::milliseconds kTimeoutThreshold(2000);
     constexpr std::chrono::milliseconds kTimeoutCheckInterval(500);
     constexpr std::chrono::milliseconds kAcceptTimeout(200);
-
+    constexpr std::chrono::milliseconds kStatsPrintInterval(1000);
+    constexpr std::chrono::milliseconds kStatsSleepSlice(100);
 }
 
 int main() {
@@ -92,6 +93,17 @@ int main() {
         }
     }
 });
+    std::thread statsThread([&stats]() {
+    auto nextPrint = std::chrono::steady_clock::now() + kStatsPrintInterval;
+    while (!g_shutdownRequested) {
+        std::this_thread::sleep_for(kStatsSleepSlice);
+        if (std::chrono::steady_clock::now() >= nextPrint) {
+            std::cout << "[stats] " << stats.summary() << "\n";
+            nextPrint += kStatsPrintInterval;
+        }
+    }
+});
+
     std::vector<std::thread> connectionThreads;
     std::cout << "Waiting for clients to connect...\n";
 
@@ -117,6 +129,7 @@ int main() {
         thread.join();
     }
     timeoutThread.join();
+    statsThread.join();
     pool.stop();
     std::cout << "Server stopped cleanly\n";
 }

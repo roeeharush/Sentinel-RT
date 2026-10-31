@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <atomic>
 #include <chrono>
+#include <string>
 
 
 class StatsCollector {
@@ -19,6 +20,7 @@ class StatsCollector {
     [[nodiscard]] std::uint64_t totalCount() const;
     [[nodiscard]] std::chrono::nanoseconds maxLatency() const;
     [[nodiscard]] std::uint64_t deadlineMissCount() const;
+    [[nodiscard]] std::string summary() const;
 
 private:
     std::atomic<std::uint64_t> okCount_ = 0;

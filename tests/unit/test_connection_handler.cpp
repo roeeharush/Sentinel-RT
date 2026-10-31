@@ -186,3 +186,35 @@ TEST(ConnectionHandler, SilenceLongerThanTheReceiveTimeoutDoesNotCloseTheConnect
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(received->deviceId, 9u);
 }
+
+TEST(ConnectionHandler, StampsTheMeasurementWithTheServerArrivalTime) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    Socket serverSideSocket(fds[0]);
+    BoundedQueue<Measurement> queue(4);
+    std::ostringstream logOutput;
+    Logger logger(logOutput);
+    std::atomic<bool> shutdown{false};
+
+    ConnectionHandler handler(std::move(serverSideSocket), queue, logger, shutdown);
+    std::thread handlerThread([&handler]() { handler.run(); });
+
+    Measurement sent;
+    sent.deviceId = 5;
+    sent.sensorType = SensorType::Temperature;
+    sent.timestamp = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    sent.value = 55.0;
+
+    std::vector<std::uint8_t> frame = encodeFrame(encodeMeasurement(sent));
+    ASSERT_EQ(send(fds[1], frame.data(), frame.size(), 0), static_cast<ssize_t>(frame.size()));
+
+    std::optional<Measurement> received = queue.pop();
+    ASSERT_TRUE(received.has_value());
+
+    auto age = std::chrono::steady_clock::now() - received->timestamp;
+    EXPECT_LT(age, std::chrono::milliseconds(500));
+
+    close(fds[1]);
+    handlerThread.join();
+}

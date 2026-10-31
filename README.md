@@ -161,7 +161,13 @@ In a second terminal, start a simulated device. It connects to `127.0.0.1:5000`,
 
 Several `device_sim` processes with different `--device-id` values can talk to the same server. Each
 process simulates one device. The server logs problems it detects, and logs a device that stops
-sending as timed out. Stop the server with Ctrl+C (or `kill`, which sends SIGTERM). It stops accepting
+sending as timed out. About once a second it prints a `[stats]` line with the totals since it started:
+the number of measurements, how many were ok, warning, critical or invalid, how many missed the 20 ms
+deadline, and the largest latency in microseconds. The latency of a measurement is the time from the
+moment the server decodes it to the end of its processing, so it is the wait in the queue plus the
+processing (the same definition as `total` in the benchmark). The server stamps each measurement
+itself, because the protocol timestamp has a resolution of one second.
+Stop the server with Ctrl+C (or `kill`, which sends SIGTERM). It stops accepting
 connections, waits for its threads and exits with code 0 (see Limitations for the details).
 
 **Scenarios.** Run scripted scenarios, with no network. The exit code is 0 if every expectation
@@ -446,7 +452,12 @@ general-purpose OS under WSL2 and gives no timing guarantees. It needs Linux (PO
   sensor, one fault per run.
 - The drift threshold is a fixed 1.0 in each sensor's own unit, the same for temperature, pressure and
   voltage. The window size is fixed at 10.
-- The protocol timestamp has a resolution of one second.
+- The protocol timestamp has a resolution of one second, so the server does not use it to measure
+  latency. The server latency does not include the time on the device or on the network, so it is not
+  an end-to-end latency, and the two machines' clocks are not synchronised in this project. The 20 ms
+  deadline is a constant chosen as an example, not a requirement.
+- The `[stats]` line reads each counter separately, so the numbers in one line may differ by one
+  measurement that was counted between two reads. It is for monitoring, not for exact accounting.
 
 **Input checking**
 

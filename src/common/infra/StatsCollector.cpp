@@ -57,3 +57,14 @@ std::chrono::nanoseconds StatsCollector::maxLatency() const {
 std::uint64_t StatsCollector::deadlineMissCount() const {
   return deadlineMissCount_.load();
 }
+
+std::string StatsCollector::summary() const {
+  std::int64_t maxLatencyUs = std::chrono::duration_cast<std::chrono::microseconds>(maxLatency()).count();
+  return "total=" + std::to_string(totalCount()) +
+       " ok=" + std::to_string(okCount()) +
+       " warning=" + std::to_string(warningCount()) +
+       " critical=" + std::to_string(criticalCount()) +
+       " invalid=" + std::to_string(invalidCount()) +
+       " deadline_misses=" + std::to_string(deadlineMissCount()) +
+       " max_latency_us=" + std::to_string(maxLatencyUs);
+}

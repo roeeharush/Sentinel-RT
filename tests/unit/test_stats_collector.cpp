@@ -127,3 +127,25 @@ TEST(StatsCollector, CountsOnlyLatenciesThatExceedDeadline) {
 
     EXPECT_EQ(stats.deadlineMissCount(), 2u);
 }
+
+TEST(StatsCollector, SummaryListsCountsDeadlineMissesAndMaxLatency) {
+    StatsCollector stats(std::chrono::milliseconds(20));
+
+    stats.record(Status::Ok);
+    stats.record(Status::Ok);
+    stats.record(Status::Warning);
+    stats.record(Status::Critical);
+    stats.record(Status::Invalid);
+    stats.recordLatency(std::chrono::milliseconds(10));
+    stats.recordLatency(std::chrono::milliseconds(32));
+
+    EXPECT_EQ(stats.summary(),
+              "total=5 ok=2 warning=1 critical=1 invalid=1 deadline_misses=1 max_latency_us=32000");
+}
+
+TEST(StatsCollector, SummaryOfAnEmptyCollectorIsAllZeros) {
+    StatsCollector stats;
+
+    EXPECT_EQ(stats.summary(),
+              "total=0 ok=0 warning=0 critical=0 invalid=0 deadline_misses=0 max_latency_us=0");
+}

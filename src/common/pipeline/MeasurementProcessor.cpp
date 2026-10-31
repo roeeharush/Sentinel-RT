@@ -21,8 +21,8 @@ MeasurementProcessor::MeasurementProcessor(MeasurementJudge& judge, StatsCollect
     : judge_(judge), stats_(stats), timeoutMonitor_(timeoutMonitor), logger_(logger) {}
 
 Status MeasurementProcessor::process(const Measurement& measurement, std::chrono::steady_clock::time_point now) {
-    std::chrono::nanoseconds latency = std::chrono::duration_cast<std::chrono::nanoseconds>(now - measurement.timestamp);
-    stats_.recordLatency(latency);
+    const std::chrono::steady_clock::time_point processingStart = std::chrono::steady_clock::now();
+    const std::chrono::nanoseconds waitTime = std::chrono::duration_cast<std::chrono::nanoseconds>(now - measurement.timestamp);
 
     timeoutMonitor_.recordArrival(measurement.deviceId, now);
 
@@ -34,6 +34,9 @@ Status MeasurementProcessor::process(const Measurement& measurement, std::chrono
     } else {
         logger_.log(LogLevel::Info, "Measurement received");
     }
+
+    const std::chrono::nanoseconds processingTime = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - processingStart);
+    stats_.recordLatency(waitTime + processingTime);
 
     return status;
 }

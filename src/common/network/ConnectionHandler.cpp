@@ -48,7 +48,7 @@ void ConnectionHandler::run() {
                 logger_.log(LogLevel::Warning, "Discarding malformed measurement payload");
                 continue;
             }
-
+            measurement->timestamp = std::chrono::steady_clock::now();
             queue_.push(*measurement);
         }
     }
